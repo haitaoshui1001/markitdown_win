@@ -75,12 +75,96 @@ class JobItem:
     target: Path | None = None
     status: str = "排队中"
     message: str = ""
+    detail: str = ""
     elapsed: float = 0.0
     chars: int = 0
 
 
 class ConversionError(Exception):
     """配置或转换过程中可直接展示给用户的错误。"""
+
+
+# --------------------------------------------------------------------------- #
+# 「转不出正文」的分类说明
+# --------------------------------------------------------------------------- #
+# markitdown 不带 OCR。图片只有两条产出路径：exiftool 元数据、多模态 LLM 描述；
+# 两者都没配时 convert() 不报错，返回空串。音频同理，转写必须走 LLM。
+IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".ico"})
+AUDIO_SUFFIXES = frozenset({".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"})
+
+_RETRY_HINT = "需要正文请在右侧勾选「用多模态 LLM 给图片写描述」，或启用 Azure Content Understanding 后重转。"
+
+
+def no_content_hint(source: Path, opts: ConvertOptions) -> tuple[str, str]:
+    """转换没报错但一行正文都没有：返回（表格里的短说明，日志里的长说明）。"""
+    ext = source.suffix.lower()
+    if opts.llm_enabled or opts.use_cu:
+        tail = "已启用云端能力仍为空，请检查模型名、Endpoint 与密钥是否有效。"
+    else:
+        tail = _RETRY_HINT
+    if ext in IMAGE_SUFFIXES:
+        return (
+            "图片无文字层，离线提不到正文",
+            f"markitdown 不含 OCR：图片只能取 exiftool 元数据或多模态描述，本机这两条都没生效，"
+            f"结果是空正文，因此未写出 Markdown 文件。{tail}",
+        )
+    if ext in AUDIO_SUFFIXES:
+        return (
+            "音频需语音转写模型",
+            f"离线没有语音转写能力，markitdown 的音频路径依赖 LLM，结果是空正文，未写出 Markdown 文件。{tail}",
+        )
+    return (
+        "转换成功但内容为空",
+        f"源文件里没有可提取的文本（空文件、纯样式或纯图片型内容），未写出 Markdown 文件。{tail}",
+    )
+
+
+def preflight_skip(source: Path, opts: ConvertOptions) -> tuple[str, str] | None:
+    """明知离线做不了的类型先拦下来，别去敲 markitdown 那扇门。
+
+    音频路径尤其必须拦：AudioConverter 固定要连云端语音端点，没配任何云端能力时
+    每个文件要白等约 42 秒 TCP 连接超时（实测 WinError 10060），批量音频就是几十分钟空转。
+    """
+    if opts.llm_enabled or opts.use_cu or opts.use_docintel:
+        return None
+    if source.suffix.lower() in AUDIO_SUFFIXES:
+        return (
+            "音频需语音转写，离线不可用",
+            "markitdown 的音频转换固定要连云端语音端点，未启用任何云端能力时每个文件会白等约 42 秒"
+            "连接超时，因此这里直接跳过、不生成 Markdown。要转音频请在「云端与 LLM」里启用多模态 LLM "
+            "并填好 Base URL / API Key / 模型（语音转写与图片描述共用同一个客户端），或改用 Azure "
+            "Content Understanding，然后重转这一批。",
+        )
+    return None
+
+
+def failure_hint(exc: Exception, source: Path) -> tuple[str, str]:
+    """把 markitdown 的英文异常翻成一句能看懂的话，原文留在日志。"""
+    ext = source.suffix.lower()
+    raw = " ".join(str(exc).split())[:400] or exc.__class__.__name__
+    try:
+        from markitdown import FileConversionException, UnsupportedFormatException
+    except ImportError:  # 无 markitdown 时退化成原文
+        FileConversionException = UnsupportedFormatException = ()  # type: ignore[assignment]
+
+    if isinstance(exc, UnsupportedFormatException):
+        if ext in IMAGE_SUFFIXES:
+            return (
+                f"图片格式 {ext} 离线不支持",
+                f"markitdown 的图片解析只接受 .jpg/.jpeg/.png，{ext} 被直接拒绝。{_RETRY_HINT}（原始信息：{raw}）",
+            )
+        return (
+            f"没有 {ext or '该类文件'} 的离线解析器",
+            f"markitdown 未收录该格式的本地转换器，需要 exiftool、第三方插件或云端能力。（原始信息：{raw}）",
+        )
+    if isinstance(exc, FileConversionException) and ext in AUDIO_SUFFIXES:
+        return ("音频转写需要 LLM", f"{_RETRY_HINT}（原始信息：{raw}）")
+    return (_first_line(exc), raw)
+
+
+def _first_line(exc: Exception) -> str:
+    text = str(exc).strip() or exc.__class__.__name__
+    return text.splitlines()[0][:300]
 
 
 # --------------------------------------------------------------------------- #
@@ -345,7 +429,8 @@ def run_batch(
     except Exception as exc:
         for it in items:
             it.status = "失败"
-            it.message = f"初始化失败：{exc}"
+            it.message = "MarkItDown 初始化失败"
+            it.detail = " ".join(str(exc).split())[:400]
             if on_item:
                 on_item(it)
         return
@@ -354,39 +439,56 @@ def run_batch(
         if stop_flag and stop_flag():
             it.status = "已取消"
             it.message = "用户停止"
+            it.detail = ""
             if on_item:
                 on_item(it)
             continue
+        # 状态由工作线程写：界面线程只负责画。反过来（界面线程写「转换中」）会在
+        # 快速批量时把已经落地的「完成」覆盖掉，行永远停在转换中。
+        it.status = "转换中"
+        it.message = ""
+        it.detail = ""
         if on_start:
             on_start(it)
         started = time.monotonic()
         try:
+            skipped = preflight_skip(it.source, opts)
+            if skipped:
+                it.status = "无内容"
+                it.message, it.detail = skipped
+                it.chars = 0
+                it.target = None
+                continue
             target = it.target or target_for(it.source, roots, opts, True)
             if target.exists() and opts.conflict == "skip":
                 it.status = "跳过"
                 it.message = "输出文件已存在"
+                it.detail = ""
                 it.target = target
-                if on_item:
-                    on_item(it)
-                continue
+                continue  # 由 finally 统一回调，这里再 emit 一次会让进度多计一格
             if target.exists() and opts.conflict == "number":
                 target = unique_path(target)
             text = convert_one(md, it.source, opts)
+            if not text.strip():
+                # 不报错但正文为空：不写 0 字节文件，明确告诉用户为什么没有 md
+                it.status = "无内容"
+                it.message, it.detail = no_content_hint(it.source, opts)
+                it.chars = 0
+                it.target = None
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
             it.target = target
             it.chars = len(text)
             it.status = "完成"
             it.message = ""
+            it.detail = ""
         except Exception as exc:
             it.status = "失败"
-            it.message = _first_line(exc)
+            it.message, it.detail = failure_hint(exc, it.source)
+            # 没写出的文件不能留在「输出文件」列里，否则那行看着像成功了
+            it.target = None
         finally:
             it.elapsed = time.monotonic() - started
             if on_item:
                 on_item(it)
-
-
-def _first_line(exc: Exception) -> str:
-    text = str(exc).strip() or exc.__class__.__name__
-    return text.splitlines()[0][:300]

@@ -19,8 +19,8 @@ from PyQt5.QtCore import QTimer  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 from markitdown_gui import settings as cfg  # noqa: E402
-from markitdown_gui.engine import ConvertOptions, validate  # noqa: E402
-from markitdown_gui.ui_main import MainWindow  # noqa: E402
+from markitdown_gui.engine import ConvertOptions, JobItem, validate  # noqa: E402
+from markitdown_gui.ui_main import STATUS_COLORS, MainWindow  # noqa: E402
 
 
 def main() -> int:
@@ -54,6 +54,34 @@ def main() -> int:
     assert reloaded.conflict == "number" and reloaded.output_dir == "D:/out", reloaded
     assert remember is False and reloaded.llm_api_key == ""
     print("配置读写:", saved)
+
+    # 「无内容」是新增状态：要能上色、能把完整原因挂在悬停提示上、统计行单独计数
+    empty_item = JobItem(
+        source=ROOT / "samples" / "sample.pdf",
+        status="无内容",
+        message="图片无文字层，离线提不到正文",
+        detail="markitdown 不含 OCR：图片只能取 exiftool 元数据或多模态描述。",
+    )
+    win.items.append(empty_item)
+    win._rebuild_table()
+    row = win.item_rows[id(empty_item)]
+    assert win.table.item(row, 0).text() == "无内容", win.table.item(row, 0).text()
+    assert win.table.item(row, 0).foreground().color() == STATUS_COLORS["无内容"], "无内容状态未着色"
+    assert win.table.item(row, 4).toolTip().startswith("markitdown 不含 OCR"), win.table.item(row, 4).toolTip()
+    assert win.table.item(row, 4).foreground().color() == STATUS_COLORS["无内容"], "说明列未跟随着色"
+    win._refresh_stats()
+    assert "无内容 1" in win.lbl_stats.text(), win.lbl_stats.text()
+    print("无内容渲染:", win.lbl_stats.text())
+
+    # 回归：started 信号不能改写状态，否则快速批量会把「完成」覆盖成「转换中」
+    race_item = JobItem(source=ROOT / "samples" / "sample.pdf", status="完成", chars=12)
+    win.items.append(race_item)
+    win._rebuild_table()
+    win._on_item_started(race_item)
+    assert race_item.status == "完成", f"started 回调覆盖了状态：{race_item.status}"
+    row = win.item_rows[id(race_item)]
+    assert win.table.item(row, 0).text() == "完成", win.table.item(row, 0).text()
+    print("started 覆盖回归: OK")
 
     win._remove_selected()
     win._clear_queue()

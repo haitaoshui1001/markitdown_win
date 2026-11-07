@@ -17,27 +17,50 @@
 - **多线程**：默认 2 线程，可调。每个线程复用一个 `MarkItDown` 实例，magika 的 onnx 模型只初始化一次；任务按步长切片分配，避免某一线程空转。
 - **输出编排**：与源文件同目录 / 输出到指定目录；自定义后缀；重名策略（覆盖 / 跳过 / 自动加序号）；命名方式（重名才保留原扩展名 / 总是保留）。输出路径在开跑前单线程统一分配，混合目录里同名文件不会互相覆盖。
 - **结果预览与日志**：双击某一行在「结果预览」里读它生成的 Markdown；「运行日志」记录每个失败项的原因；底部「打开输出目录」用资源管理器定位产物。
+- **不假装成功**：图片、音频这类离线提不出正文的文件标成「无内容」并且不写空 `.md`；markitdown 的英文异常翻成中文短句，原文保留在悬停提示和日志里。
 - **参数全量映射**：见下表，含 Azure 文档智能、Azure Content Understanding、多模态 LLM 图片描述（默认全部关闭）。
 - **配置自动记忆**：关窗口时把当前参数写回配置文件，下次打开还在；API Key 默认不落盘。
 - **高 DPI 自适应**：按真实缩放比例渲染（150% 不会进位成 200%），窗口默认尺寸跟随屏幕工作区。
 
 ## 支持的格式
 
-默认可识别 46 种扩展名：
+默认识别 46 种扩展名，但**「能识别」不等于「离线能转出正文」**：
 
-| 类别 | 扩展名 |
-| --- | --- |
-| 办公文档 | `.pdf` `.docx` `.xlsx` `.xls` `.pptx` `.ppsx` `.sldx` `.thmx` `.msg` |
-| 网页与数据 | `.html` `.htm` `.xml` `.csv` `.json` `.zip` `.epub` `.ipynb` |
-| 纯文本与代码 | `.txt` `.md` `.markdown` `.log` `.ini` `.conf` `.yaml` `.yml` `.tex` `.bib` `.py` `.js` `.ts` `.css` `.sql` |
-| 图片 | `.png` `.jpg` `.jpeg` `.gif` `.bmp` `.tiff` `.tif` `.webp` |
-| 音频 | `.wav` `.mp3` `.m4a` `.aac` `.ogg` `.flac` |
+| 类别 | 扩展名 | 离线转换 |
+| --- | --- | --- |
+| 办公文档 | `.pdf` `.docx` `.xlsx` `.xls` `.pptx` `.ppsx` `.sldx` `.thmx` `.msg` | 可 |
+| 网页与数据 | `.html` `.htm` `.xml` `.csv` `.json` `.zip` `.epub` `.ipynb` | 可 |
+| 纯文本与代码 | `.txt` `.md` `.markdown` `.log` `.ini` `.conf` `.yaml` `.yml` `.tex` `.bib` `.py` `.js` `.ts` `.css` `.sql` | 可 |
+| 图片 | `.png` `.jpg` `.jpeg` | 只出 exiftool 元数据；**没有 OCR，图里的文字提不出来** |
+| 图片 | `.gif` `.bmp` `.tiff` `.tif` `.webp` | 不可，markitdown 的图片解析器只收 jpg/png |
+| 音频 | `.wav` `.mp3` `.m4a` `.aac` `.ogg` `.flac` | 不可，转写必须走 LLM 或 Azure |
 
 几点要注意：
 
 - 老版二进制格式 `.doc` / `.ppt` / `.rtf` 离线转换不支持，所以没进默认列表；需要它们请勾选 Azure 文档智能或 Content Understanding。
 - 没有扩展名的文件也能转，magika 会按内容识别类型；识别错了用「格式提示」里的扩展名 / MIME / 字符集强制指定。
-- 图片转文字、音频转写需要额外配置（LLM 或 Azure 服务），纯离线只会输出元数据。
+- 图片想有正文只有两条路：勾选「用多模态 LLM 给图片写描述」，或启用 Azure Content Understanding。装 exiftool 只会多出 `ImageSize` 之类的元数据行，仍然没有文字。
+
+## 转不出正文时会怎样
+
+程序不会假装成功。这类文件的状态是紫色的**「无内容」**，说明列写明原因，**磁盘上不产生 0 字节的 `.md`**，本轮结束时日志汇总一句有多少个文件没出内容：
+
+![无内容与失败状态的界面表现](assets/screenshot-no-content.png)
+
+四种表现分别是：
+
+| 状态 | 触发条件 | 说明列 |
+| --- | --- | --- |
+| 完成（绿） | 正常转出文本 | 空 |
+| 无内容（紫） | 图片/音频离线提不到正文 | `图片无文字层，离线提不到正文` / `音频需语音转写，离线不可用` |
+| 失败（红） | markitdown 报错 | `图片格式 .gif 离线不支持`（英文原文挂在悬停提示和运行日志里） |
+| 跳过（黄） | 重名策略设为「跳过已存在」 | `输出文件已存在` |
+
+「无内容」和「失败」都会被「转换队列（批量）」重新纳入，所以开完 LLM 或 Content Understanding 直接重跑即可。
+
+用「快速转换单个文件…」转图片时，因为用户已经指定了保存路径，程序会**弹窗**告知没能生成 Markdown 以及原因，而不是留下一个空文件让人去找。
+
+音频还多做了一层预检：markitdown 的音频路径固定要去连云端语音端点，未启用云端能力时每个文件会白等约 42 秒 TCP 超时。现在离线状态下直接判「无内容」，不再空等。
 
 ## 快速开始
 
@@ -111,9 +134,9 @@ set IDX=-i https://pypi.tuna.tsinghua.edu.cn/simple
 ## 自测
 
 ```bat
-.venv\Scripts\python.exe scripts\verify_engine.py     :: 引擎层 16 项，约 40 秒
-.venv\Scripts\python.exe scripts\smoke_ui.py          :: 离屏冒烟：界面构建、队列、校验、配置读写
-.venv\Scripts\pyinstaller.exe --noconfirm build.spec  :: 约 106 秒
+.venv\Scripts\python.exe scripts\verify_engine.py     :: 引擎层 26 项，约 3 秒
+.venv\Scripts\python.exe scripts\smoke_ui.py          :: 离屏冒烟：界面构建、队列、校验、配置读写、状态渲染
+.venv\Scripts\pyinstaller.exe --noconfirm build.spec  :: 约 110 秒
 .venv\Scripts\python.exe scripts\verify_exe.py        :: 打包产物 9 项
 ```
 
@@ -143,6 +166,7 @@ docs/                        设计与部署文档（HTML）
 - 窗口从 150% 缩放的屏幕拖到 100% 缩放的屏幕，Qt5 不会重新缩放，重启程序才正确。
 - 逻辑工作区宽度低于约 1200 px 时（例如 1366×768 开了 125% 缩放，只剩 1093×614），右侧参数面板需要横向滚动，窗口高度下限也可能顶到任务栏。
 - 云端能力（文档智能 / Content Understanding / LLM 描述）需要网络和有效订阅，关闭时不影响其他功能。
+- markitdown 本身不含 OCR：图片里的文字离线永远提不出来，装 exiftool 也只能拿到元数据行。
 - 桌面拖拽进窗口未纳入自动化验证。
 
 ## 更多文档

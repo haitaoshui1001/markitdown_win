@@ -105,8 +105,46 @@ def main() -> int:
 
     opts_skip = opts.copy(conflict="skip")
     skipped = [JobItem(source=sources[0], target=existing)]
-    run_batch(skipped, opts_skip, [SAMPLES])
+    skip_callbacks: list[str] = []
+    run_batch(skipped, opts_skip, [SAMPLES], on_item=lambda it: skip_callbacks.append(it.status))
     check("重名跳过", skipped[0].status == "跳过", skipped[0].status + " " + skipped[0].message)
+    # 每个文件只回调一次：回调两次会让界面的「剩余」提前归零、进度条冲过头
+    check("跳过项只回调一次", len(skip_callbacks) == 1, str(skip_callbacks))
+
+    # 没有 OCR / 多模态时，「转不出正文」必须显式告知，而不是留下 0 字节文件
+    import struct
+    import wave
+
+    from PIL import Image
+
+    from markitdown_gui.engine import no_content_hint
+
+    media = WORK / "media"
+    media.mkdir()
+    Image.new("RGB", (64, 48), (10, 120, 200)).save(media / "p.png")
+    Image.new("RGB", (64, 48), (10, 120, 200)).save(media / "p.gif")
+    with wave.open(str(media / "a.wav"), "wb") as wv:
+        wv.setnchannels(1)
+        wv.setsampwidth(2)
+        wv.setframerate(8000)
+        wv.writeframes(struct.pack("<" + "h" * 400, *([500] * 400)))
+
+    media_items = [JobItem(source=p) for p in sorted(media.iterdir())]
+    plan_jobs(media_items, [], opts)
+    run_batch(media_items, opts, [])
+    by_name = {it.source.name: it for it in media_items}
+
+    check("png 判为无内容", by_name["p.png"].status == "无内容", by_name["p.png"].status + " " + by_name["p.png"].message)
+    check("无内容不写出文件", by_name["p.png"].target is None and not list(media.glob("*.md")), str(list(media.iterdir())))
+    check("无内容说明可行动", "正文" in by_name["p.png"].message and "LLM" in by_name["p.png"].detail, by_name["p.png"].message)
+    check("gif 失败说明中文化", by_name["p.gif"].status == "失败" and by_name["p.gif"].message.startswith("图片格式"), by_name["p.gif"].message)
+    check("gif 说明给出支持范围", ".jpg" in by_name["p.gif"].detail, by_name["p.gif"].detail[:120])
+    check("wav 离线预检拦截", by_name["a.wav"].status == "无内容" and "语音转写" in by_name["a.wav"].message, by_name["a.wav"].status + " " + by_name["a.wav"].message)
+    check("wav 不空等网络超时", by_name["a.wav"].elapsed < 1.0, f"耗时 {by_name['a.wav'].elapsed:.1f}s")
+    check("失败项保留原始信息", bool(by_name["p.gif"].detail), "detail 为空")
+
+    _, cloud_detail = no_content_hint(media / "p.png", ConvertOptions(llm_enabled=True, llm_model="m", llm_api_key="k"))
+    check("启用云端仍为空时提示查密钥", "检查模型名" in cloud_detail, cloud_detail[:120])
 
     print()
     if failures:

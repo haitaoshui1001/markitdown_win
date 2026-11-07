@@ -56,6 +56,7 @@ from .engine import (
 STATUS_COLORS = {
     "完成": QColor(0, 128, 0),
     "失败": QColor(200, 0, 0),
+    "无内容": QColor(150, 60, 150),
     "跳过": QColor(180, 130, 0),
     "已取消": QColor(120, 120, 120),
     "转换中": QColor(0, 90, 180),
@@ -110,6 +111,8 @@ class MainWindow(QMainWindow):
         self.active_chunks = 0
         self.done_since_start = 0
         self.total_since_start = 0
+        # 快速转换是用户明确挑了保存路径的单发任务，没出文件要弹窗说清楚
+        self.announce_item: JobItem | None = None
 
         self.pool = QThreadPool(self)
         self.signals = TaskSignals()
@@ -564,9 +567,12 @@ class MainWindow(QMainWindow):
         )
         for col, val in enumerate(values):
             self.table.item(row, col).setText(val)
+        # 说明列只放短句，完整原因（含 markitdown 原始英文）挂在悬停提示上
+        self.table.item(row, 4).setToolTip(item.detail or item.message)
         color = STATUS_COLORS.get(item.status)
         if color is not None:
-            self.table.item(row, 0).setForeground(color)
+            for col in (0, 4):
+                self.table.item(row, col).setForeground(color)
 
     def _remove_selected(self) -> None:
         rows = {i.row() for i in self.table.selectedIndexes()}
@@ -596,8 +602,9 @@ class MainWindow(QMainWindow):
             return None
         return opts
 
-    def _begin_run(self, items: list[JobItem], opts: ConvertOptions) -> None:
+    def _begin_run(self, items: list[JobItem], opts: ConvertOptions, announce: bool = False) -> None:
         self.opts = opts
+        self.announce_item = items[0] if announce and len(items) == 1 else None
         self.stop_event.clear()
         self.running = True
         self.total_since_start = len(items)
@@ -626,7 +633,7 @@ class MainWindow(QMainWindow):
         opts = self._checked_options()
         if opts is None:
             return
-        items = [it for it in self.items if it.status in ("排队中", "失败", "跳过", "已取消")]
+        items = [it for it in self.items if it.status in ("排队中", "失败", "跳过", "已取消", "无内容")]
         if not items:
             if not self.items:
                 QMessageBox.information(self, "没有待转换文件", "队列为空，请先「添加文件」或「添加文件夹」。")
@@ -637,6 +644,7 @@ class MainWindow(QMainWindow):
         for it in items:
             it.status = "排队中"
             it.message = ""
+            it.detail = ""
             it.target = None
             it.elapsed = 0.0
         plan_jobs(items, self.folder_roots, opts)
@@ -667,7 +675,7 @@ class MainWindow(QMainWindow):
         self._rebuild_table()
         self._update_counts()
         self._log(f"快速转换 {source.name} → {target}")
-        self._begin_run([item], opts.copy(conflict="overwrite"))
+        self._begin_run([item], opts.copy(conflict="overwrite"), announce=True)
 
     def _default_single_target(self, source: Path, opts: ConvertOptions) -> Path:
         suffix = opts.output_suffix.strip() or ".md"
@@ -677,7 +685,7 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(object)
     def _on_item_started(self, item: JobItem) -> None:
-        item.status = "转换中"
+        # 只重画，不改 item.status——状态归工作线程管，否则快速批量会互相覆盖
         self._paint_row(item)
 
     @pyqtSlot(object)
@@ -686,14 +694,18 @@ class MainWindow(QMainWindow):
         self.progress.setValue(self.done_since_start)
         self._paint_row(item)
         self._refresh_stats()
-        if item.status == "失败":
-            self._log(f"失败 {item.source.name}：{item.message}")
+        if item.status in ("失败", "无内容"):
+            self._log(f"{item.status} {item.source.name}：{item.message}")
+            if item.detail and item.detail != item.message:
+                self._log("  " + item.detail)
 
     def _refresh_stats(self) -> None:
         done = sum(1 for it in self.items if it.status == "完成")
         fail = sum(1 for it in self.items if it.status == "失败")
+        empty = sum(1 for it in self.items if it.status == "无内容")
         left = max(self.total_since_start - self.done_since_start, 0)
-        self.lbl_stats.setText(f"本轮完成 {done} · 失败 {fail} · 剩余 {left}")
+        extra = f" · 无内容 {empty}" if empty else ""
+        self.lbl_stats.setText(f"本轮完成 {done} · 失败 {fail}{extra} · 剩余 {left}")
 
     @pyqtSlot()
     def _on_chunk_finished(self) -> None:
@@ -705,6 +717,25 @@ class MainWindow(QMainWindow):
         self._set_inputs_enabled(True)
         total = sum(it.chars for it in self.items)
         self._log(f"本轮结束，累计输出 {total} 字符")
+        empty = [it for it in self.items if it.status == "无内容"]
+        if empty:
+            names = "、".join(it.source.name for it in empty[:5]) + ("…" if len(empty) > 5 else "")
+            self._log(f"{len(empty)} 个文件没有可提取的正文，未生成 Markdown：{names}")
+            self._log("  图片需要 OCR 或多模态描述、音频需要语音转写；离线状态下这些内容无法变成文字。")
+        self._announce_quick_single()
+
+    def _announce_quick_single(self) -> None:
+        """快速转换没产出文件时直接告诉用户，而不是让他去找那个不存在的 md。"""
+        item, self.announce_item = self.announce_item, None
+        if item is None or item.status in ("完成", "已取消"):
+            return
+        if item.status == "跳过":
+            QMessageBox.information(self, "未覆盖已有文件", f"{item.source.name}\n\n输出文件已存在，按当前重名策略跳过了。")
+            return
+        body = f"{item.source.name}\n\n{item.message}"
+        if item.detail and item.detail != item.message:
+            body += "\n\n" + item.detail
+        QMessageBox.warning(self, "未能生成 Markdown", body)
 
     def _set_inputs_enabled(self, enabled: bool) -> None:
         for b in (
