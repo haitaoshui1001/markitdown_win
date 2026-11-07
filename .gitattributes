@@ -1,0 +1,19 @@
+# 默认不做换行转换；下列类型显式声明
+* -text
+
+# 测试素材必须保持原始字节：sample_noext / sample.pdf 的 xref 偏移是手工算的，
+# 一旦被转成 CRLF 就会破坏交叉引用表，verify_engine.py 的 PDF 用例会失败
+samples/**  -text
+*.pdf       -text
+*.docx      -text
+*.xlsx      -text
+*.pptx      -text
+*.ico       -text
+
+# 源码与文档统一 LF
+*.py        text eol=lf
+*.spec      text eol=lf
+*.html      text eol=lf
+*.md        text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf

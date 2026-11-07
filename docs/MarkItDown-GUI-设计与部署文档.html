@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarkItDown GUI · 设计与部署文档</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --ink:#1c2027; --ink2:#4a5262; --ink3:#7b8494;
+  --line:#e2e6ec; --accent:#2f6fed; --accent-soft:#eaf0fe; --ok:#0a7d3f; --warn:#b26a00; --bad:#c0272d;
+  --mono:"JetBrains Mono","Cascadia Code",Consolas,"Courier New",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.88em;background:#eef1f6;border:1px solid var(--line);
+  border-radius:4px;padding:1px 5px}
+pre{margin:0}
+
+/* ---------- 顶栏 ---------- */
+header.top{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.94);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:14px;padding:10px 22px}
+header.top .brand{font-weight:700;font-size:15px;letter-spacing:.2px}
+header.top .sub{color:var(--ink3);font-size:12.5px}
+header.top .sp{flex:1}
+.btn{border:1px solid var(--line);background:#fff;color:var(--ink2);border-radius:7px;
+  padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08);color:#fff}
+.btn.sm{padding:3px 8px;font-size:11.5px;border-radius:5px}
+
+/* ---------- 两栏 ---------- */
+.wrap{display:grid;grid-template-columns:272px minmax(0,1fr);gap:26px;
+  max-width:1320px;margin:0 auto;padding:24px 22px 80px}
+nav.toc{position:sticky;top:66px;align-self:start;max-height:calc(100vh - 90px);
+  overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 8px}
+nav.toc .tt{font-size:11.5px;color:var(--ink3);text-transform:uppercase;
+  letter-spacing:.8px;padding:0 10px 8px}
+nav.toc a{display:block;padding:6px 10px;border-radius:7px;color:var(--ink2);font-size:13px;
+  border-left:2px solid transparent;line-height:1.45}
+nav.toc a:hover{background:var(--accent-soft);text-decoration:none;color:var(--accent)}
+nav.toc a.on{background:var(--accent-soft);color:var(--accent);border-left-color:var(--accent);font-weight:600}
+nav.toc a.dep{padding-left:24px;font-size:12.5px;color:var(--ink3)}
+
+main{min-width:0}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:22px 26px 26px;margin-bottom:20px;scroll-margin-top:78px}
+h2{font-size:20px;margin:0 0 4px;display:flex;align-items:baseline;gap:10px}
+h2 .no{font:600 12px/1 var(--mono);color:#fff;background:var(--accent);
+  border-radius:5px;padding:4px 7px;flex:none;transform:translateY(-2px)}
+h3{font-size:15.5px;margin:24px 0 8px;color:var(--ink)}
+h3:first-of-type{margin-top:18px}
+p{margin:9px 0}
+ul,ol{margin:9px 0;padding-left:22px}
+li{margin:4px 0}
+.lead{color:var(--ink2);font-size:14px;margin:2px 0 16px}
+
+/* ---------- 表格 ---------- */
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#f2f5fa;font-weight:600;color:var(--ink2);white-space:nowrap}
+tbody tr:nth-child(even){background:#fafbfd}
+td code{white-space:nowrap}
+.tscroll{overflow-x:auto}
+
+/* ---------- 提示块 ---------- */
+.note,.warn,.bad,.ok{border-left:3px solid var(--accent);background:var(--accent-soft);
+  padding:11px 15px;border-radius:0 9px 9px 0;margin:14px 0;font-size:13.5px}
+.warn{border-color:var(--warn);background:#fdf5e7}
+.bad{border-color:var(--bad);background:#fdeeee}
+.ok{border-color:var(--ok);background:#eef8f1}
+.note b,.warn b,.bad b,.ok b{display:inline-block;margin-right:4px}
+
+/* ---------- 代码块 ---------- */
+.block{position:relative;margin:14px 0}
+.block pre{background:#1b1f27;color:#e6e9ef;padding:14px 16px;border-radius:10px;
+  overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65}
+.block .cap{position:absolute;top:7px;right:12px;font:11px/1 var(--mono);color:#8b95a8}
+.blk-light pre{background:#f2f5fa;color:var(--ink);border:1px solid var(--line)}
+.blk-light .cap{color:var(--ink3)}
+
+/* ---------- 图形 ---------- */
+figure.d{margin:18px 0;border:1px solid var(--line);border-radius:12px;background:#fcfdfe;overflow:hidden}
+.dbar{display:flex;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid var(--line);
+  background:#f5f7fb;flex-wrap:wrap}
+.dbar .dname{font-size:12.5px;font-weight:600;color:var(--ink2);margin-right:auto}
+.zlvl{font:11.5px/1 var(--mono);color:var(--ink3);min-width:42px;text-align:center}
+.dstage{padding:16px;overflow:auto;background:
+  repeating-linear-gradient(0deg,#fcfdfe,#fcfdfe 23px,#f7f9fc 23px,#f7f9fc 24px)}
+.dstage .mm svg{display:block}
+.dsrc{padding:14px 16px;background:#1b1f27;color:#c9d3e3;font-family:var(--mono);
+  font-size:12.5px;line-height:1.6;overflow:auto;white-space:pre}
+figure.d .cap2{padding:8px 14px;font-size:12.5px;color:var(--ink3);border-top:1px solid var(--line)}
+.hidden{display:none}
+
+/* ---------- CSS 线框图（空间布局比流程图更贴切时用） ---------- */
+figure.mock{margin:18px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:#fcfdfe;padding:14px}
+figure.mock .row{display:flex;gap:8px;align-items:center;background:#f2f5fa;border:1px solid var(--line);
+  border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--ink2);flex-wrap:wrap}
+figure.mock .row b{color:var(--ink);font-weight:600}
+figure.mock .row .sp{flex:1}
+figure.mock .mid{display:grid;grid-template-columns:3fr 1.05fr;gap:8px;margin:8px 0}
+figure.mock .left{display:grid;grid-template-rows:1.4fr 1fr;gap:8px}
+figure.mock .pane{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;
+  color:var(--ink2);background:#fff}
+figure.mock .pane .cols{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;
+  color:var(--ink3);border-bottom:1px dashed var(--line);padding-bottom:7px;margin-bottom:7px}
+figure.mock .pane .fill{color:var(--ink3);font-size:12px}
+figure.mock .panel{border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);
+  padding:10px 12px;font-size:12.5px;color:var(--ink2);display:flex;flex-direction:column;gap:6px}
+figure.mock .panel .g{background:#fff;border:1px solid #cfe0ff;border-radius:6px;padding:6px 9px;font-size:12px}
+figure.mock .panel .g em{font-style:normal;color:var(--ink3);font-size:11.5px}
+figure.mock .stat{margin-top:8px;background:#eef1f6;border:1px solid var(--line);border-radius:8px;
+  padding:8px 12px;font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+figure.mock .cap2{padding:8px 2px 0;font-size:12.5px;color:var(--ink3)}
+
+/* ---------- 徽标 ---------- */
+.pill{display:inline-block;font:600 11px/1 var(--mono);padding:4px 8px;border-radius:20px;
+  background:var(--accent-soft);color:var(--accent);margin:0 4px 4px 0}
+.pill.g{background:#eef8f1;color:var(--ok)}
+.pill.o{background:#fdf5e7;color:var(--warn)}
+.pill.r{background:#fdeeee;color:var(--bad)}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:13.5px;margin:12px 0}
+.kv div:nth-child(odd){color:var(--ink3)}
+.kv div:nth-child(even){font-family:var(--mono);font-size:12.5px;word-break:break-all}
+hr.s{border:0;border-top:1px dashed var(--line);margin:20px 0}
+
+@media (max-width:980px){
+  .wrap{grid-template-columns:1fr;padding:16px 14px 60px}
+  nav.toc{position:static;max-height:none;margin-bottom:6px}
+  .kv{grid-template-columns:1fr}
+}
+@media print{
+  header.top,nav.toc,.dbar,.btn{display:none!important}
+  body{background:#fff}
+  .wrap{grid-template-columns:1fr;max-width:none;padding:0}
+  section{border:0;padding:0 0 14px;page-break-inside:avoid}
+  .dsrc{background:#f2f5fa;color:var(--ink)}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="brand">MarkItDown GUI</span>
+  <span class="sub">设计与部署文档 · v1.0 · 2026-11-06</span>
+  <span class="sp"></span>
+  <button class="btn sm" id="btnAllSrc">全部图示源码</button>
+  <button class="btn primary" id="btnDl" title="把当前页面（含已渲染的图）另存为 HTML">下载本文档</button>
+</header>
+
+<div class="wrap">
+<nav class="toc" id="toc">
+  <div class="tt">目录</div>
+  <a href="#s1">1 · 交付概览</a>
+  <a href="#s2">2 · 需求与关键决策</a>
+  <a href="#s3">3 · 系统架构</a>
+  <a href="#s4">4 · 转换流水线</a>
+  <a href="#s5">5 · 并发模型</a>
+  <a href="#s6">6 · 输出命名与冲突策略</a>
+  <a href="#s7">7 · 参数全集</a>
+  <a href="#s8">8 · 配置持久化与密钥处理</a>
+  <a href="#s9">9 · 打包设计</a>
+  <a href="#s10">10 · 部署步骤</a>
+  <a href="#s11">11 · 验证与回归</a>
+  <a href="#s12">12 · 已知限制</a>
+  <a href="#s13">13 · 故障排查</a>
+  <a href="#s14">14 · 二次开发与环境重建</a>
+</nav>
+
+<main>
+
+<!-- ============================================================ 1 -->
+<section id="s1">
+<h2><span class="no">01</span>交付概览</h2>
+<p class="lead">把微软 <code>markitdown</code> 封装成免安装 Python 的 Windows 桌面程序，支持单文件转换、批量转换，并把 markitdown 的全部可配置参数暴露到界面上。</p>
+
+<div class="kv">
+  <div>可执行文件</div><div>D:\devsoft\markitdown\dist\MarkItDownGUI\MarkItDownGUI.exe</div>
+  <div>打包形态</div><div>PyInstaller onedir + windowed（无控制台）</div>
+  <div>产物体积</div><div>exe 18.9 MB + _internal 266 MB ≈ 285 MB</div>
+  <div>目标平台</div><div>Windows 10 / 11 x64（含 64 位 ARM 需重打包）</div>
+  <div>运行依赖</div><div>无（Python / VC++ 运行库均已内置）</div>
+  <div>核心版本</div><div>markitdown 0.1.6 · Python 3.12.7 · PyQt5 5.15.10 (Qt 5.15.2) · PyInstaller 6.22.3</div>
+  <div>离线可识别</div><div>46 种扩展名 · Azure CU 支持 31 种类型</div>
+  <div>回归结论</div><div>引擎 16 项 + 打包 exe 9 项全部通过</div>
+</div>
+
+<figure class="mock">
+  <div class="row"><b>输入栏</b>
+    <span class="pill">添加文件…</span><span class="pill">添加文件夹…</span><span class="pill">重新扫描文件夹</span>
+    <span class="pill">移除选中</span><span class="pill">清空队列</span><span class="sp"></span><span>队列：N 个文件 · M 个文件夹</span></div>
+  <div class="mid">
+    <div class="left">
+      <div class="pane"><div class="cols"><span>状态</span><span>源文件</span><span>输出文件</span><span>耗时</span><span>说明</span></div>
+        <div class="fill">每个 <code>JobItem</code> 一行，状态色区分 排队中 / 转换中 / 完成 / 失败 / 跳过 / 已取消；双击行打开输出文件</div></div>
+      <div class="pane"><div class="cols"><span style="color:var(--accent)">结果预览</span><span>运行日志</span></div>
+        <div class="fill">预览用等宽不折行显示 Markdown 原文；日志保留最近 4000 行</div></div>
+    </div>
+    <div class="panel"><b>参数面板</b><em>纵向滚动，常驻右侧</em>
+      <div class="g">输入与扫描 <em>递归 / 白名单 / 隐藏 / 线程数</em></div>
+      <div class="g">输出 <em>位置 / 后缀 / 重名 / 命名方式</em></div>
+      <div class="g">格式提示 <em>-x / -m / -c</em></div>
+      <div class="g">转换选项 <em>data URI / 插件 / exiftool</em></div>
+      <div class="g">云端与 LLM <em>DI / CU / LLM，默认全关</em></div>
+      <div class="g">配置 <em>保存 / 另存为 / 载入 / 默认值</em></div>
+    </div>
+  </div>
+  <div class="row"><b>操作栏</b><span class="pill">转换队列（批量）</span><span class="pill">快速转换单个文件…</span>
+    <span class="pill">停止</span><span class="sp"></span><span>进度条 · 本轮完成 X 失败 Y 剩余 Z</span><span class="sp"></span>
+    <span class="pill">打开输出目录</span></div>
+  <div class="stat">状态栏：markitdown 0.1.6 · Python 3.12.7 · 默认可识别 46 种扩展名 · CU 支持类型 31 种 · 配置 %APPDATA%\MarkItDownGUI\config.json</div>
+  <div class="cap2">中部左右分屏比例 3 : 1，只有中间那行吃多余高度（<code>setRowStretch(1, 1)</code>），否则输入栏和操作栏会被一起撑开。</div>
+</figure>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="s2">
+<h2><span class="no">02</span>需求与关键决策</h2>
+<p>原始需求三句话：可执行软件、单个与批量都能转、参数都能在界面配置。落地时做了四个取舍，每个都有明确代价。</p>
+
+<div class="tscroll"><table>
+<thead><tr><th>决策</th><th>选择</th><th>理由</th><th>承担的代价</th></tr></thead>
+<tbody>
+<tr><td>打包形态</td><td>目录版 onedir</td><td>启动不解压临时目录、冷启动 1 秒级；onedir 是 PyInstaller 兼容性最好的路径，magika 的 onnx 模型能按原目录结构就位</td><td>分发要带整个文件夹，285 MB，不能只发一个 exe</td></tr>
+<tr><td>参数范围</td><td>全部暴露、默认关闭</td><td>云端与 LLM 参数需要自备密钥，默认关闭可保证「装好就能离线用」；同时不阉割高级能力</td><td>界面项多，需要分组 + 滚动 + 配置预设来压复杂度</td></tr>
+<tr><td>构建环境</td><td>独立 venv</td><td>不污染 Anaconda base，依赖集合可复现，打包体积只含实际需要的包</td><td>换机重建环境需按第 14 节命令重装</td></tr>
+<tr><td>并发单位</td><td>线程 × N，每线程一个引擎实例</td><td>markitdown 的耗时在 IO 与解析，线程比进程轻；但 magika 模型初始化极贵，必须按线程复用而非按文件</td><td>UI 锁定期不能改参数；GIL 下 CPU 密集格式加速比不到线性</td></tr>
+</tbody></table></div>
+
+<h3>明确不做的事</h3>
+<ul>
+  <li>不做 onefile 单文件版：每次启动解压 266 MB，冷启动 5～15 秒，且 magika 模型路径需要额外 hook，收益不抵风险。</li>
+  <li>不做老版 <code>.doc</code> / <code>.ppt</code> / <code>.rtf</code> 支持：markitdown 离线不含这些转换器，界面对应扩展名直接不收录，避免「加了文件却必然失败」。</li>
+  <li>不做命令行模式：验证走 <code>--selftest</code>，只用于打包产物自检，不是对外功能。</li>
+</ul>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="s3">
+<h2><span class="no">03</span>系统架构</h2>
+<p class="lead">四个模块，边界只有一条：<b>引擎层不 import Qt</b>。所有转换逻辑可以脱离界面单独跑测试，界面只负责收集参数、驱动线程、渲染状态。</p>
+
+<figure class="d">
+  <div class="dbar"><span class="dname">图 2 · 模块分层与依赖方向</span>
+    <button class="btn sm bz" data-z="-0.15">−</button><span class="zlvl">100%</span><button class="btn sm bz" data-z="0.15">+</button>
+    <button class="btn sm brz">重置</button><button class="btn sm bsrc">源码</button></div>
+  <div class="dstage"><div class="mm"></div></div>
+  <pre class="dsrc hidden"></pre>
+  <pre class="mmdef hidden">
+flowchart TB
+  subgraph L0["入口层"]
+    AE["app_entry.py · PyInstaller 主入口"]
+    MM["markitdown_gui.__main__ · 参数分派：--selftest 或 GUI"]
+  end
+  subgraph L1["界面层 PyQt5"]
+    UM["ui_main.py · MainWindow / BatchTask / TaskSignals"]
+  end
+  subgraph L2["引擎层 纯 Python"]
+    EN["engine.py · ConvertOptions / validate / plan_jobs / run_batch"]
+  end
+  subgraph L3["持久层"]
+    ST["settings.py · config.json 读写 · 密钥剥离"]
+  end
+  subgraph L4["第三方"]
+    MD["markitdown 0.1.6"]
+    MG["magika + onnxruntime"]
+    OP["openai / azure-* 可选"]
+  end
+  AE --> MM --> UM
+  UM --> EN
+  UM --> ST
+  ST --> EN
+  EN --> MD
+  MD --> MG
+  EN -.惰性导入.-> OP
+  classDef ui fill:#eaf0fe,stroke:#2f6fed
+  classDef core fill:#eef8f1,stroke:#0a7d3f
+  classDef ext fill:#f4f5f7,stroke:#c9d3e3,stroke-dasharray:4 3
+  class UM ui
+  class EN,ST core
+  class MD,MG,OP ext
+  </pre>
+  <div class="cap2">依赖单向向下；<code>engine.py</code> 对 markitdown / openai / azure 全部惰性导入，因此未装这些包时界面照样能起、能做离线冒烟测试。</div>
+</figure>
+
+<h3>各模块职责</h3>
+<div class="tscroll"><table>
+<thead><tr><th>文件</th><th>行数级</th><th>职责</th><th>关键导出</th></tr></thead>
+<tbody>
+<tr><td><code>src/markitdown_gui/engine.py</code></td><td>~390</td><td>参数模型、配置校验、文件枚举、输出路径规划、批量执行</td><td><code>ConvertOptions</code> <code>JobItem</code> <code>validate()</code> <code>collect_sources()</code> <code>plan_jobs()</code> <code>run_batch()</code> <code>new_markitdown()</code></td></tr>
+<tr><td><code>src/markitdown_gui/ui_main.py</code></td><td>~850</td><td>主窗口、参数面板、队列表格、线程池调度、拖拽、状态渲染</td><td><code>MainWindow</code> <code>BatchTask(QRunnable)</code> <code>TaskSignals</code></td></tr>
+<tr><td><code>src/markitdown_gui/settings.py</code></td><td>~80</td><td><code>%APPDATA%\MarkItDownGUI\config.json</code> 读写，密钥按需剥离</td><td><code>load_options()</code> <code>save_options()</code> <code>write_options_to()</code> <code>read_options_from()</code></td></tr>
+<tr><td><code>src/markitdown_gui/__main__.py</code></td><td>~50</td><td>入口分派；<code>--selftest</code> 无界面转换并把结果写日志文件</td><td><code>main()</code> <code>_selftest()</code></td></tr>
+<tr><td><code>app_entry.py</code></td><td>~10</td><td>把 <code>src</code> 加进 <code>sys.path</code> 后调用 <code>main()</code>，供 spec 当入口脚本</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3>为什么引擎层不依赖 Qt</h3>
+<p>这是整套设计里最值钱的一条约束。它带来三个直接收益：</p>
+<ol>
+  <li><b>可测</b>：<code>scripts/verify_engine.py</code> 16 项检查全部不需要起界面，跑一次 40 秒；如果转换逻辑混在槽函数里，就只能靠人肉点界面。</li>
+  <li><b>可换壳</b>：将来要做 CLI、右键菜单、开机服务，直接复用 <code>run_batch</code>，不必拆 Qt。</li>
+  <li><b>打包可分段验证</b>：<code>--selftest</code> 走的就是引擎层，能在 windowed exe 没有 stdout 的情况下单独证明「依赖装全了」，把「引擎坏」和「界面坏」区分开。</li>
+</ol>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="s4">
+<h2><span class="no">04</span>转换流水线</h2>
+<p class="lead">一次「转换队列（批量）」点击背后是五步，前三步全部在 GUI 线程单线程完成，只有最后一步进线程池。</p>
+
+<figure class="d">
+  <div class="dbar"><span class="dname">图 3 · 批量转换数据流</span>
+    <button class="btn sm bz" data-z="-0.15">−</button><span class="zlvl">100%</span><button class="btn sm bz" data-z="0.15">+</button>
+    <button class="btn sm brz">重置</button><button class="btn sm bsrc">源码</button></div>
+  <div class="dstage"><div class="mm"></div></div>
+  <pre class="dsrc hidden"></pre>
+  <pre class="mmdef hidden">
+flowchart TB
+  A["添加文件 / 添加文件夹 / 拖拽"] --> B["collect_sources · 递归枚举 + 去重 + 过滤"]
+  B --> C["JobItem 队列 · 表格可视化"]
+  C --> D{"validate · 配置校验"}
+  D -->|不通过| K["列出问题清单，不启动"]
+  D -->|通过| E["plan_jobs · 单线程预分配全部输出路径"]
+  E --> F["_partition · 按线程数交错切片"]
+  F --> G1["线程 1：new_markitdown 一次，顺序转换整个 chunk"]
+  F --> G2["线程 N：同上"]
+  G1 --> H["写盘 UTF-8"]
+  G2 --> H
+  H --> I["item_done 信号 · 刷新行 / 进度 / 统计"]
+  I --> J["chunk_finished 计数归零才解锁输入"]
+  classDef gate fill:#fdf5e7,stroke:#b26a00
+  classDef work fill:#eef8f1,stroke:#0a7d3f
+  class D,K gate
+  class G1,G2,H work
+  </pre>
+  <div class="cap2">校验和路径规划刻意留在主线程：这两步涉及全量视图，多线程做会产生竞态，而且耗时相对转换可以忽略。</div>
+</figure>
+
+<h3>枚举阶段的四条过滤规则</h3>
+<p><code>collect_sources()</code> 对每个候选路径依次判断，顺序固定：</p>
+<ol>
+  <li><b>必须是文件</b>，目录本身不进队列。</li>
+  <li><b>隐藏项</b>：路径任一段以 <code>.</code> 开头则丢弃，除非勾选「包含隐藏文件/目录」。</li>
+  <li><b>扩展名白名单</b>：勾选「只收录可识别的扩展名」时，只保留 46 种离线可识别扩展名；取消勾选则全量收录，交给 markitdown 自己判断。</li>
+  <li><b>不吃自己的产出</b>：输出后缀（默认 <code>.md</code>）且落在输出目录或扫描根目录内的文件被排除——否则第二轮批量会把上一轮生成的 Markdown 再转一遍，形成自我增殖。</li>
+</ol>
+<p>同一文件既从「添加文件」进来、又被某个「添加文件夹」覆盖时，按 <code>resolve()</code> 后的真实路径去重，只转一次。</p>
+
+<h3>单文件快速转换走的是同一条路</h3>
+<p>「快速转换单个文件…」不经过枚举和路径规划：选源文件 → 预填默认输出路径 → 允许改名/换目录 → 以 <code>conflict="overwrite"</code> 强制覆盖语义提交单个 <code>JobItem</code>。这样既复用线程与信号机制，又不会因为「重名时=跳过」的队列设置让用户误以为转换失败。</p>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="s5">
+<h2><span class="no">05</span>并发模型</h2>
+<p class="lead">一个 GUI 线程 + N 个 worker 线程，跨线程只通过信号传递，worker 从不直接碰控件。</p>
+
+<figure class="d">
+  <div class="dbar"><span class="dname">图 4 · 一次批量转换的时序</span>
+    <button class="btn sm bz" data-z="-0.15">−</button><span class="zlvl">100%</span><button class="btn sm bz" data-z="0.15">+</button>
+    <button class="btn sm brz">重置</button><button class="btn sm bsrc">源码</button></div>
+  <div class="dstage"><div class="mm"></div></div>
+  <pre class="dsrc hidden"></pre>
+  <pre class="mmdef hidden">
+sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant M as GUI 线程 MainWindow
+  participant P as QThreadPool
+  participant W as Worker 线程 × N
+  participant E as engine.run_batch
+  U->>M: 点击 转换队列
+  M->>M: validate + plan_jobs 主线程完成
+  M->>M: _set_inputs_enabled false 锁输入
+  M->>M: active_chunks = N
+  loop 每个 chunk
+    M->>P: pool.start BatchTask
+    P->>W: 调度执行
+    W->>E: run_batch 整批一次
+    E->>E: new_markitdown 仅一次 含 magika 模型加载
+    loop chunk 内每个文件
+      E-->>W: on_start item
+      W-->>M: signals.item_started 队列投递
+      M->>M: 该行标为 转换中
+      E->>E: convert + 写盘
+      E-->>W: on_item item
+      W-->>M: signals.item_done 队列投递
+      M->>M: 刷新行 进度 统计
+    end
+    W->>M: signals.chunk_finished
+    M->>M: active_chunks 减一
+  end
+  M->>M: 归零才 _set_inputs_enabled true 解锁
+  M-->>U: 本轮完成 X 失败 Y
+  </pre>
+  <div class="cap2">信号是 <code>pyqtSignal</code>，Qt 自动按队列连接投递回 GUI 线程执行，因此 worker 里绝不能直接调用控件方法。</div>
+</figure>
+
+<h3>三个容易踩的坑，以及代码里的对应处理</h3>
+<div class="tscroll"><table>
+<thead><tr><th>坑</th><th>现象</th><th>处理</th><th>位置</th></tr></thead>
+<tbody>
+<tr><td>引擎实例按文件创建</td><td>每个文件都要重载 magika 的 onnx 模型，批量比单线程还慢</td><td><code>run_batch()</code> 接收<b>整个 chunk</b>，进入循环前 <code>new_markitdown()</code> 一次</td><td><code>engine.py:340</code></td></tr>
+<tr><td>按文件提交线程池</td><td>线程池每个任务各自初始化引擎，等于把上一个坑放大</td><td>先 <code>_partition</code> 交错切片，一个 chunk 一个 <code>BatchTask</code></td><td><code>ui_main.py:619</code></td></tr>
+<tr><td>第一个 chunk 完成就解锁</td><td>界面显示可操作，但后台还在跑，用户改参数或关窗</td><td><code>chunk_finished</code> 信号 + <code>active_chunks</code> 计数，归零才解锁</td><td><code>ui_main.py:699</code></td></tr>
+</tbody></table></div>
+
+<h3>交错切片的用意</h3>
+<p><code>items[i::n]</code> 而不是连续分块，是为了让每个线程拿到的文件大小尽量均匀。连续分块时若文件夹按名字排序、大文件恰好集中在前缀，就会出现「线程 1 跑完剩下三个还在啃同一个大 PDF」。交错之后进度条推进更平滑，停止响应也更及时。</p>
+
+<h3>停止语义</h3>
+<p>「停止」置位 <code>threading.Event</code>，worker 在<b>每个文件开始前</b>检查；已经写盘的文件不回滚，剩余文件标为「已取消」。关窗口时先置位再 <code>pool.waitForDone(5000)</code>，避免线程还没退出就析构控件导致崩溃。</p>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="s6">
+<h2><span class="no">06</span>输出命名与冲突策略</h2>
+<div class="warn"><b>这是本项目唯一一次真产品级 bug。</b>最初把 7 个样例文件批量输出到同一目录，结果只剩 3 个文件——<code>sample.pdf</code>、<code>sample.docx</code>、<code>sample.xlsx</code> 的主名都是 <code>sample</code>，全部映射到同一个 <code>sample.md</code> 互相覆盖。命令行时代用户一次只转一个文件，感知不到；批量界面必然暴露。</div>
+
+<p>修复方式是引入两个正交的维度，而不是简单加序号：</p>
+
+<figure class="d">
+  <div class="dbar"><span class="dname">图 5 · 输出路径决策</span>
+    <button class="btn sm bz" data-z="-0.15">−</button><span class="zlvl">100%</span><button class="btn sm bz" data-z="0.15">+</button>
+    <button class="btn sm brz">重置</button><button class="btn sm bsrc">源码</button></div>
+  <div class="dstage"><div class="mm"></div></div>
+  <pre class="dsrc hidden"></pre>
+  <pre class="mmdef hidden">
+flowchart TD
+  S["源文件 sample.docx"] --> N{"命名方式"}
+  N -->|自动 auto| A1["基底 sample.md 去掉原扩展名"]
+  N -->|总是保留原扩展名| A2["基底 sample.docx.md"]
+  A1 --> C{"同一批里有多个任务 · 落到同一个基底吗"}
+  C -->|只有一个| W1["就用 sample.md"]
+  C -->|多个| W2["整组改用保留原扩展名 · sample.pdf.md sample.docx.md"]
+  W2 --> D{"仍然重名"}
+  D -->|是| W3["追加序号 _1 _2"]
+  A2 --> E["得到目标路径"]
+  W1 --> E
+  W3 --> E
+  E --> F{"写盘前目标已存在"}
+  F -->|覆盖 overwrite| G1["直接重写"]
+  F -->|跳过已存在 skip| G2["标为跳过 不转换"]
+  F -->|加序号 number| G3["unique_path 找到 sample_1.md 再写"]
+  F -->|不存在| G4["正常写入"]
+  classDef fix fill:#eef8f1,stroke:#0a7d3f
+  classDef bad fill:#fdeeee,stroke:#c0272d
+  class W2 fix
+  class G2 bad
+  </pre>
+  <div class="cap2">上半段 <code>plan_jobs()</code> 在主线程一次算完，下半段 <code>run_batch()</code> 在 worker 里按磁盘实况处理。</div>
+</figure>
+
+<div class="note"><b>为什么要分两段：</b>批内重名是<b>逻辑问题</b>，转换前就能全部知道，所以主线程一次性分配，天然没有竞态；磁盘上已存在同名文件是<b>运行时状态</b>，必须写盘前查，所以留在 worker 里按 <code>conflict</code> 策略处理。把两者混在一处做，就会出现「两个线程同时判断 sample.md 不存在，然后都去写」。</div>
+
+<h3>实测结果</h3>
+<p>7 个样例（pdf/docx/xlsx/pptx/html/csv/gbk.txt）批量输出到同一目录，修复后得到：</p>
+<div class="block blk-light"><pre>sample.csv.md   sample.docx.md   sample.html.md   sample.pdf.md
+sample.pptx.md  sample.xlsx.md   sample_gbk.md</pre></div>
+<p>7 个文件全部保留，无需用户改命名方式——「自动」模式自己识别到了冲突组并切换到保留原扩展名。</p>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="s7">
+<h2><span class="no">07</span>参数全集</h2>
+<p class="lead">界面每一项都对应 <code>ConvertOptions</code> 的一个字段，字段再翻译成 markitdown 的 CLI 参数或 Python API 关键字。下表是完整映射，也是「参数都能配」这条需求的验收清单。</p>
+
+<div class="tscroll"><table>
+<thead><tr><th>分组</th><th>界面项</th><th>字段</th><th>对应 markitdown</th><th>默认</th></tr></thead>
+<tbody>
+<tr><td rowspan="4">输入与扫描</td><td>递归子文件夹</td><td><code>recurse</code></td><td>GUI 侧行为（<code>rglob</code> vs <code>glob</code>）</td><td>开</td></tr>
+<tr><td>只收录可识别的扩展名</td><td><code>filter_by_extension</code></td><td>GUI 侧白名单 <code>CANDIDATE_EXTENSIONS</code></td><td>开</td></tr>
+<tr><td>包含隐藏文件/目录</td><td><code>include_hidden</code></td><td>GUI 侧过滤</td><td>关</td></tr>
+<tr><td>并发线程数 1–16</td><td><code>max_workers</code></td><td>GUI 侧线程池</td><td>2</td></tr>
+
+<tr><td rowspan="5">输出</td><td>与源文件同目录 / 输出到指定目录</td><td><code>output_mode</code></td><td>GUI 侧编排（<code>alongside</code> / <code>folder</code>）</td><td>同目录</td></tr>
+<tr><td>指定目录 + 浏览</td><td><code>output_dir</code></td><td>GUI 侧编排</td><td>空</td></tr>
+<tr><td>文件后缀</td><td><code>output_suffix</code></td><td>GUI 侧编排，须以 <code>.</code> 开头</td><td><code>.md</code></td></tr>
+<tr><td>重名时：覆盖 / 跳过已存在 / 加序号</td><td><code>conflict</code></td><td>GUI 侧策略（命令行无对应，CLI 总是覆盖）</td><td>覆盖</td></tr>
+<tr><td>命名方式：自动 / 总是保留原扩展名</td><td><code>name_mode</code></td><td>GUI 侧策略（解决批内主名撞车）</td><td>自动</td></tr>
+
+<tr><td rowspan="3">格式提示</td><td>扩展名</td><td><code>extension_hint</code></td><td><code>-x</code> → <code>StreamInfo(extension=)</code></td><td>空</td></tr>
+<tr><td>MIME 类型</td><td><code>mimetype_hint</code></td><td><code>-m</code> → <code>StreamInfo(mimetype=)</code></td><td>空</td></tr>
+<tr><td>字符集</td><td><code>charset_hint</code></td><td><code>-c</code> → <code>StreamInfo(charset=)</code></td><td>空</td></tr>
+
+<tr><td rowspan="3">转换选项</td><td>保留 data URI</td><td><code>keep_data_uris</code></td><td><code>--keep-data-uris</code> → <code>convert(keep_data_uris=)</code></td><td>关</td></tr>
+<tr><td>启用第三方插件 + 列出插件</td><td><code>use_plugins</code></td><td><code>--use-plugins</code> → <code>MarkItDown(enable_plugins=)</code></td><td>关</td></tr>
+<tr><td>exiftool 路径</td><td><code>exiftool_path</code></td><td><code>--exiftool-path</code> → <code>MarkItDown(exiftool_path=)</code></td><td>空（走系统 PATH）</td></tr>
+
+<tr><td rowspan="3">Azure 文档智能</td><td>Azure 文档智能 开关</td><td><code>use_docintel</code></td><td><code>-d</code> / <code>--use-docintel</code></td><td>关</td></tr>
+<tr><td>DI Endpoint</td><td><code>docintel_endpoint</code></td><td><code>-e</code> → <code>MarkItDown(docintel_endpoint=)</code></td><td>空</td></tr>
+<tr><td>DI API 版本</td><td><code>docintel_api_version</code></td><td><code>MarkItDown(docintel_api_version=)</code></td><td>空</td></tr>
+
+<tr><td rowspan="4">Azure Content Understanding</td><td>CU 开关</td><td><code>use_cu</code></td><td><code>--use-cu</code></td><td>关</td></tr>
+<tr><td>CU Endpoint</td><td><code>cu_endpoint</code></td><td><code>--cu-endpoint</code></td><td>空</td></tr>
+<tr><td>CU Analyzer</td><td><code>cu_analyzer</code></td><td><code>--cu-analyzer</code> → <code>cu_analyzer_id</code></td><td>空（自动）</td></tr>
+<tr><td>CU 文件类型（逗号分隔）</td><td><code>cu_file_types</code></td><td><code>--cu-file-types</code> → <code>ContentUnderstandingFileType</code> 枚举列表</td><td>空（全部 31 种）</td></tr>
+
+<tr><td rowspan="5">多模态 LLM</td><td>用多模态 LLM 给图片写描述</td><td><code>llm_enabled</code></td><td>Python API 独有（CLI 无对应开关）</td><td>关</td></tr>
+<tr><td>LLM Base URL</td><td><code>llm_base_url</code></td><td><code>OpenAI(base_url=)</code></td><td>空（官方端点）</td></tr>
+<tr><td>LLM API Key（密文输入框）</td><td><code>llm_api_key</code></td><td><code>OpenAI(api_key=)</code></td><td>空 → 回落 <code>OPENAI_API_KEY</code></td></tr>
+<tr><td>LLM 模型</td><td><code>llm_model</code></td><td><code>MarkItDown(llm_model=)</code></td><td>空</td></tr>
+<tr><td>LLM 提示词</td><td><code>llm_prompt</code></td><td><code>MarkItDown(llm_prompt=)</code></td><td>空（内置默认描述指令）</td></tr>
+
+<tr><td rowspan="2">密钥与配置</td><td>把 API Key 明文存进本地配置文件</td><td>不入 <code>ConvertOptions</code>，独立标记 <code>_remember_secret</code></td><td>GUI 侧安全开关</td><td>关</td></tr>
+<tr><td>保存 / 另存为 / 载入 / 默认值 / 配置目录</td><td>—</td><td>GUI 侧配置管理</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3>校验规则（点转换时拦截，不静默失败）</h3>
+<div class="tscroll"><table>
+<thead><tr><th>条件</th><th>提示</th></tr></thead>
+<tbody>
+<tr><td>启用 DI 但 Endpoint 空</td><td>需要 Endpoint，且凭据来自 <code>AZURE_DOCUMENT_INTELLIGENCE_KEY</code></td></tr>
+<tr><td>DI 与 CU 同时启用</td><td>两者互斥，只能启用一个</td></tr>
+<tr><td>启用 CU 但 Endpoint 空</td><td>缺少 <code>--cu-endpoint</code></td></tr>
+<tr><td>CU 文件类型含不支持的值</td><td>逐项点名哪个类型不支持（对照 31 种枚举）</td></tr>
+<tr><td>启用 LLM 但模型名空</td><td>未填写模型名</td></tr>
+<tr><td>启用 LLM 但界面无 Key 且环境变量也没有</td><td>提示两种补法：界面填，或设 <code>OPENAI_API_KEY</code></td></tr>
+<tr><td>扩展名提示格式非法</td><td>点名该值不合法（自动补 <code>.</code> 后仍不合规才报）</td></tr>
+<tr><td>MIME 提示不含且仅含一个 <code>/</code></td><td>应形如 <code>application/pdf</code></td></tr>
+<tr><td>字符集不被 <code>codecs.lookup</code> 识别</td><td>给出可用示例 UTF-8 / GB18030</td></tr>
+<tr><td>输出到指定目录但目录空</td><td>目录为空</td></tr>
+<tr><td>输出后缀不以 <code>.</code> 开头</td><td>应以 <code>.</code> 开头，例如 <code>.md</code></td></tr>
+</tbody></table></div>
+<p>校验返回<b>问题清单</b>而不是抛第一个错，一次弹窗列全，避免用户改一个报一个来回试。</p>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="s8">
+<h2><span class="no">08</span>配置持久化与密钥处理</h2>
+
+<div class="kv">
+  <div>配置文件</div><div>%APPDATA%\MarkItDownGUI\config.json</div>
+  <div>写入时机</div><div>点「保存」、退出时（closeEvent）、另存为</div>
+  <div>格式</div><div>UTF-8 JSON，键名与 ConvertOptions 字段一一对应</div>
+  <div>兼容策略</div><div>读取时按 dataclass 字段白名单过滤，多余键忽略、缺失键用默认</div>
+</div>
+
+<h3>密钥的三条路径</h3>
+<figure class="d">
+  <div class="dbar"><span class="dname">图 6 · LLM API Key 的取值与落盘</span>
+    <button class="btn sm bz" data-z="-0.15">−</button><span class="zlvl">100%</span><button class="btn sm bz" data-z="0.15">+</button>
+    <button class="btn sm brz">重置</button><button class="btn sm bsrc">源码</button></div>
+  <div class="dstage"><div class="mm"></div></div>
+  <pre class="dsrc hidden"></pre>
+  <pre class="mmdef hidden">
+flowchart TB
+  R1["config.json 里有 llm_api_key"] --> R3["启动时填入界面输入框"]
+  R2["字段为空"] --> R4["回落环境变量 OPENAI_API_KEY"]
+  R3 --> U["用户在界面编辑"]
+  R4 --> U
+  U --> S1{"勾选了 明文存进配置文件"}
+  S1 -->|是| S2["原样写入 llm_api_key"]
+  S1 -->|否 · 默认| S3["写盘前清空该字段，并记 _remember_secret=false"]
+  classDef safe fill:#eef8f1,stroke:#0a7d3f
+  classDef risk fill:#fdf5e7,stroke:#b26a00
+  class S3 safe
+  class S2 risk
+  </pre>
+  <div class="cap2">默认不持久化密钥：环境变量优先，界面上填的 Key 只在本次会话内存活。</div>
+</figure>
+
+<p>Azure 侧的密钥<b>不进配置文件</b>，只从环境变量读，这是 markitdown 自身的设计：</p>
+<div class="tscroll"><table>
+<thead><tr><th>能力</th><th>环境变量</th><th>界面里配什么</th></tr></thead>
+<tbody>
+<tr><td>Azure Document Intelligence</td><td><code>AZURE_DOCUMENT_INTELLIGENCE_KEY</code></td><td>只填 Endpoint 与 API 版本</td></tr>
+<tr><td>Azure Content Understanding</td><td><code>AZURE_AI_SERVICES_KEY</code></td><td>只填 Endpoint / Analyzer / 文件类型</td></tr>
+<tr><td>多模态 LLM 图片描述</td><td><code>OPENAI_API_KEY</code>（可被界面值覆盖）</td><td>Base URL / Key / 模型 / 提示词</td></tr>
+</tbody></table></div>
+
+<div class="note"><b>一处已修正的默认值：</b><code>settings.py</code> 原本在配置文件缺失时把「记住密钥」当作 <code>True</code>，与文件头声明的「勾选后才落盘」矛盾——新用户第一次启用 LLM 并填了 Key，退出时就会被明文写进 <code>%APPDATA%</code>。现在三处默认全部改为 <code>False</code>，「默认值」按钮复位时也一并取消勾选。</div>
+
+<h3>配置的可移植性</h3>
+<p>「另存为 / 载入」导出的是同一份 JSON，可以把一套调好的参数（含 DI/CU Endpoint）拷到另一台机器直接载入；导出同样受「记住密钥」开关约束，勾选状态下导出的文件<b>含明文 Key</b>，跨机分发前要注意。</p>
+</section>
+
+<!-- ============================================================ 9 -->
+<section id="s9">
+<h2><span class="no">09</span>打包设计</h2>
+<p class="lead">配置文件 <code>build.spec</code>，一条命令产出。下面四项是打包能否成功的关键，其余都是常规的瘦身。</p>
+
+<figure class="mock">
+  <div class="row"><b>图 7 · 产物结构与体积构成</b><span class="sp"></span>
+    <span>整包 285 MB = exe 18.9 MB + _internal 266 MB</span></div>
+  <div class="block blk-light" style="margin:10px 0 0"><pre>dist\MarkItDownGUI\                                约 285 MB
+├─ MarkItDownGUI.exe                        18.9 MB   bootloader + 图标 + 归档索引
+└─ _internal\                               266 MB
+   ├─ Python312.dll + 标准库                          解释器，目标机无需装 Python
+   ├─ VCRUNTIME140*.dll / MSVCP140*.dll               VC++ 运行库，通常免装
+   ├─ PyQt5\                                           仅 QtWidgets / QtGui / QtCore
+   │  └─ Qt5\plugins\platforms\qwindows.dll            缺了直接起不了窗口
+   ├─ markitdown\ + pdfminer / mammoth / openpyxl /
+   │  xlrd / epub / …                                   离线转换器与其依赖
+   ├─ magika\models\*.onnx + configs        ★ 缺失则每个文件都「初始化失败」
+   ├─ onnxruntime\                                      模型推理
+   └─ azure_* / openai / youtube_transcript_api /
+      PIL / soundfile / pydub / olefile                 可选能力，靠 hiddenimports 打入</pre></div>
+  <div class="cap2">exe 与 <code>_internal</code> 必须同级共存；exe 单独拷走必定启动失败。★ 标记项是打包最容易漏的一处。</div>
+</figure>
+
+<h3>四个关键点</h3>
+<div class="tscroll"><table>
+<thead><tr><th>点</th><th>做法</th><th>不这样会怎样</th></tr></thead>
+<tbody>
+<tr><td>magika 模型</td><td><code>datas += collect_data_files("magika")</code></td><td>静态分析只收 <code>.py</code>，onnx 模型和配置不进包；界面表现为每个文件都「初始化失败」，报错信息还不直观</td></tr>
+<tr><td>惰性导入的可选包</td><td>对 azure / openai / youtube_transcript_api / PIL / soundfile / pydub / olefile / pbixray 逐个 <code>__import__</code> 试探，成功才加 <code>hiddenimports</code></td><td>markitdown 用 try/except 导入这些包，PyInstaller 扫不到；结果 exe 能启动，但一碰到 PDF 图片就报缺模块</td></tr>
+<tr><td>markitdown 子模块</td><td><code>collect_submodules("markitdown")</code></td><td>转换器注册表按名字动态加载，漏子模块等于某些格式静默不支持</td></tr>
+<tr><td>无控制台</td><td><code>console=False</code></td><td>用户会看到一个黑色终端窗；副作用是 <b>stdout 不存在</b>，所以自检必须写日志文件而不是打印</td></tr>
+</tbody></table></div>
+
+<h3>瘦身</h3>
+<p>排除 <code>tkinter</code>、<code>matplotlib</code>、<code>scipy</code>、<code>IPython</code>、<code>notebook</code>、<code>pytest</code>，以及 20 多个用不到的 Qt 模块（QtWebEngine、QtQml、QtMultimedia、QtNetwork、QtSvg…）。其中 QtWebEngine 单个就有 200 MB 量级，误收会让产物翻倍。</p>
+
+<h3>可复现性</h3>
+<p>spec 内所有路径基于 <code>SPECPATH</code> 拼接，图标缺失时自动降级为默认图标而不是构建失败，因此换机器、换盘符都能直接构建。</p>
+
+<div class="block"><div class="cap">build</div><pre>cd /d D:\devsoft\markitdown
+.venv\Scripts\pyinstaller.exe --noconfirm build.spec
+:: 产物 dist\MarkItDownGUI\MarkItDownGUI.exe，本次构建耗时约 106 秒</pre></div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section id="s10">
+<h2><span class="no">10</span>部署步骤</h2>
+
+<h3>10.1 分发前</h3>
+<div class="block"><div class="cap">cmd</div><pre>:: 1) 自检产物完整性（9 项检查，含真实启动窗口标题）
+.venv\Scripts\python.exe scripts\verify_exe.py
+
+:: 2) 压缩整个目录，保证 exe 与 _internal 的相对位置不散
+cd /d D:\devsoft\markitdown\dist
+powershell -NoProfile -Command "Compress-Archive -Path .\MarkItDownGUI -DestinationPath .\MarkItDownGUI.zip -Force"</pre></div>
+
+<h3>10.2 目标机要求</h3>
+<div class="tscroll"><table>
+<thead><tr><th>项</th><th>要求</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>操作系统</td><td>Windows 10 / 11，64 位</td><td>构建机是 win32/x64；ARM64 设备需在该架构上重新打包</td></tr>
+<tr><td>Python</td><td>不需要</td><td>解释器与全部第三方包已在 <code>_internal</code></td></tr>
+<tr><td>VC++ 运行库</td><td>通常不需要</td><td><code>VCRUNTIME140*.dll</code>、<code>MSVCP140*.dll</code> 已随包；若报缺 DLL 再装 vc_redist.x64</td></tr>
+<tr><td>磁盘</td><td>≥ 400 MB 空闲</td><td>解压后 285 MB，批量输出另算</td></tr>
+<tr><td>权限</td><td>普通用户即可</td><td>配置写 <code>%APPDATA%</code>，不需要管理员；不要放进 <code>Program Files</code> 免触发虚拟化</td></tr>
+<tr><td>网络</td><td>离线可用</td><td>仅启用 DI / CU / LLM 时才需要出网</td></tr>
+</tbody></table></div>
+
+<h3>10.3 安装动作</h3>
+<ol>
+  <li>把 <code>MarkItDownGUI.zip</code> 拷到目标机，解压到任意<b>非系统</b>目录，例如 <code>D:\Tools\</code>。</li>
+  <li>确认结构是 <code>D:\Tools\MarkItDownGUI\MarkItDownGUI.exe</code> 且同级有 <code>_internal</code>。</li>
+  <li>双击 exe。首次运行冷启动约 1～3 秒（magika 模型加载），之后同一进程内逐文件很快。</li>
+  <li>可选：右键 exe → 发送到 → 桌面快捷方式；把 <code>samples\</code> 里的样例文件拖进窗口即可验证。</li>
+</ol>
+
+<h3>10.4 首次运行可能被拦</h3>
+<div class="warn"><b>exe 未做代码签名。</b>SmartScreen 会弹「Windows 已保护你的电脑」→ 点「更多信息」→「仍要运行」。如果是从网盘、IM、邮件附件下载的，Windows 会给整个压缩包打 Mark-of-the-Web：右键 zip → 属性 → 勾选「解除锁定」再解压；或只对外层的 <code>MarkItDownGUI.exe</code> 做同样操作。</div>
+<p>部分杀软会把 PyInstaller 目录版报为可疑（自解压 + 内嵌解释器的通用特征）。建议连同 <code>build.spec</code>、源码一起交付，或申请企业白名单；长期方案是买代码签名证书。</p>
+
+<h3>10.5 升级替换</h3>
+<div class="block"><div class="cap">cmd</div><pre>:: 配置在 %APPDATA%，与程序目录无关，覆盖安装不丢配置
+rmdir /s /q "D:\Tools\MarkItDownGUI"
+xcopy /e /i /q "新包\MarkItDownGUI" "D:\Tools\MarkItDownGUI"
+:: 回滚同理：保留上一版 zip 即可原地换回</pre></div>
+</section>
+
+<!-- ============================================================ 11 -->
+<section id="s11">
+<h2><span class="no">11</span>验证与回归</h2>
+<p class="lead">三层验证，从内到外。GUI 程序没法靠人肉点界面做回归，所以每一层都能在无操作者参与的情况下给出退出码。</p>
+
+<div class="tscroll"><table>
+<thead><tr><th>脚本</th><th>覆盖层</th><th>检查数</th><th>耗时</th><th>跑什么</th></tr></thead>
+<tbody>
+<tr><td><code>scripts/verify_engine.py</code></td><td>引擎层，不起界面</td><td>16</td><td>约 40 秒</td><td>6 种格式关键词命中、无后缀文件靠 <code>-x</code> 救回、<code>-c GB18030</code> 解码、11 条校验规则拦截、文件夹扫描计数、输出路径唯一性、3 线程批量、落盘文件数、keep_extension 命名、序号策略、跳过策略</td></tr>
+<tr><td><code>scripts/smoke_ui.py</code></td><td>界面层，离屏 Qt</td><td>—</td><td>约 10 秒</td><td>重复添加去重、文件夹扫描数、非法配置被弹窗拦截、配置读写往返且未勾选时密钥被剥离。用 <code>QT_QPA_PLATFORM=offscreen</code> + 临时 <code>APPDATA</code>，不碰真实配置</td></tr>
+<tr><td><code>scripts/verify_exe.py</code></td><td>打包产物</td><td>9</td><td>约 1 分钟</td><td>exe 转 6 种格式 + 无后缀文件（走 <code>--selftest</code> 写日志再断言）、真实启动后进程存活、窗口标题正确、整包体积</td></tr>
+</tbody></table></div>
+
+<h3>为什么 windowed exe 要设计成写日志文件</h3>
+<p><code>console=False</code> 的 exe 没有 stdout，<code>print</code> 直接丢弃，用 <code>subprocess</code> 抓输出会拿到空。自检因此把结果写进 <code>&lt;输出文件&gt;.selftest.log</code>，内容形如 <code>SELFTEST_OK chars=1234 out=…</code>，失败则写 <code>SELFTEST_FAIL 异常类型: 消息</code> 加完整 traceback，同时用退出码 0/1 表达结果。这样打包验证与界面行为完全解耦。</p>
+
+<div class="bad"><b>一条被删掉的路：</b>曾加过 <code>--uitest</code> 想在 exe 内跑界面自检，但在 windowed 构建里挂住 180 秒且不写日志（<code>qoffscreen.dll</code> 确认已进包）。原因是无控制台进程的 Qt 事件循环与离屏平台组合不可靠。最终<b>删掉该功能</b>，改用「真实启动 + 检查窗口标题」这条稳定路径，而不是继续绕。经验：离屏验证只在开发环境（有 stdout）做，产物验证走真实启动。</p>
+
+<h3>视觉验证</h3>
+<p>两个布局缺陷是几何 dump 和截图发现的，逻辑测试全绿也照样存在：</p>
+<ul>
+  <li><b>纵向</b>：中央三行网格未设行拉伸，输入栏 / 分屏 / 操作栏平分高度，表格被压到 259 px。加 <code>grid.setRowStretch(1, 1)</code> 后表格 506 px。</li>
+  <li><b>横向</b>：参数面板内容需要 960 px 而视口只有 568 px，右侧整块被裁。改为下拉项显示短中文、真实值放 <code>userData</code>、长说明放悬停提示，配置路径从 <code>QLabel</code> 挪进 tooltip（Windows 长路径不可断行会把面板顶宽）。现在内容 437 px &lt; 视口 487 px，无横向滚动条。</li>
+  <li><b>缩放</b>：Qt 默认按 96 DPI 渲染，在 2560×1600 / 150% 屏上整界面偏小且面板被裁。开启 <code>AA_EnableHighDpiScaling</code>，并把取整策略设为 <code>PassThrough</code>——默认策略会把 150% 进位成 200%，反而整体过大。默认窗口尺寸同时改为随屏幕工作区自适应。</li>
+</ul>
+<div class="note"><b>截图方法：</b>桌面区域 <code>CopyFromScreen</code> 会把遮挡在上面的别的窗口一起拍进来，曾据此误判。可靠做法是对目标 HWND 调 <code>PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT)</code>，并在同进程先声明 PerMonitorV2 DPI 感知，否则拿到的是缩放后的虚拟坐标。Qt 内部还可以直接 <code>widget.grab()</code>，但离屏平台缺中文字体会得到空白字形，必须在真实平台插件下用。</p>
+</section>
+
+<!-- ============================================================ 12 -->
+<section id="s12">
+<h2><span class="no">12</span>已知限制</h2>
+<div class="tscroll"><table>
+<thead><tr><th>限制</th><th>原因</th><th>用户怎么办</th></tr></thead>
+<tbody>
+<tr><td>老版 <code>.doc</code> / <code>.ppt</code> / <code>.rtf</code> 不支持</td><td>markitdown 离线不含这些转换器（需 Word 组件或云端 OCR）</td><td>先另存为 <code>.docx</code> / <code>.pptx</code>；或启用 Azure DI 走云端</td></tr>
+<tr><td>云端与 LLM 默认关闭且需自备密钥</td><td>Endpoint 与 Key 属于用户资产，程序不代管</td><td>按第 7 节填 Endpoint，密钥走环境变量或勾选明文保存</td></tr>
+<tr><td>音频转写质量依赖本地识别器</td><td>用的是 <code>speechrecognition</code> 离线路径，非云端语音模型</td><td>长音频或口音重的素材建议走云端方案</td></tr>
+<tr><td>YouTube 链接需联网且常被地区/风控拦截</td><td><code>youtube-transcript-api</code> 抓取字幕</td><td>失败时改本地下载后转文件</td></tr>
+<tr><td>加密 PDF / 密码保护 Office 直接失败</td><td>markitdown 不处理解密</td><td>先移除密码；错误信息会原样进「说明」列</td></tr>
+<tr><td>批量执行期间不能改参数</td><td>输入区整体禁用，避免运行中参数与已规划路径不一致</td><td>需要改就先「停止」</td></tr>
+<tr><td>格式提示三项对整批生效</td><td><code>StreamInfo</code> 是任务级而非文件级</td><td>混合格式请留空，或按格式分批添加（界面已写进说明文字）</td></tr>
+<tr><td>拖拽添加未纳入自动化回归</td><td>桌面拖放无法在脚本里模拟</td><td>需在真机点一次确认；其余路径均有脚本覆盖</td></tr>
+<tr><td>exe 未签名</td><td>无代码签名证书</td><td>SmartScreen 选「仍要运行」，解压前解除锁定</td></tr>
+</tbody></table></div>
+</section>
+
+<!-- ============================================================ 13 -->
+<section id="s13">
+<h2><span class="no">13</span>故障排查</h2>
+<div class="tscroll"><table>
+<thead><tr><th>现象</th><th>根因</th><th>处理</th></tr></thead>
+<tbody>
+<tr><td>双击无反应 / 一闪而过</td><td>只拷了 exe，缺 <code>_internal</code>；或目标机是 32 位 / ARM</td><td>确认同级存在 <code>_internal</code>；<code>winver</code> 查架构</td></tr>
+<tr><td>SmartScreen 拦住</td><td>未签名 + Mark-of-the-Web</td><td>右键 zip → 属性 → 解除锁定；或「更多信息 → 仍要运行」</td></tr>
+<tr><td>每个文件都「初始化失败：…」</td><td>magika 模型未进包（自己改过 spec）</td><td>恢复 <code>collect_data_files("magika")</code> 后重打包</td></tr>
+<tr><td>某格式突然不支持</td><td>可选依赖被排除或 <code>hiddenimports</code> 漏项</td><td>对照第 9 节表格补包；用 <code>--selftest</code> 复现拿 traceback</td></tr>
+<tr><td>批量后输出文件比输入少</td><td>命名撞车被覆盖（旧版本行为）或「重名时=跳过」</td><td>升级到当前版本；把「重名时」设为覆盖/加序号，「命名方式」设为自动</td></tr>
+<tr><td>中文 txt 出来是乱码</td><td>GBK/GB18030 文件被按 UTF-8 猜</td><td>「字符集」填 <code>GB18030</code> 再转；混合格式请单独一批</td></tr>
+<tr><td>无后缀文件被跳过</td><td>白名单按扩展名过滤</td><td>取消勾选「只收录可识别的扩展名」，或填「扩展名」提示如 <code>.pdf</code></td></tr>
+<tr><td>启用 LLM 后弹窗说缺 Key</td><td>界面未填且环境变量也没有</td><td>设 <code>OPENAI_API_KEY</code>，或在界面填 Key</td></tr>
+<tr><td>填了 Key 换机后没了</td><td>默认不持久化密钥（设计如此）</td><td>目标机设环境变量，或勾选明文保存后用「另存为/载入」迁移</td></tr>
+<tr><td>DI 与 CU 都勾了报互斥</td><td>markitdown 只允许一条云端路径</td><td>二选一</td></tr>
+<tr><td>进度条不动但没报错</td><td>大 PDF / 大 PPT 单文件解析本身就慢</td><td>看「状态」列是否为「转换中」；必要时提高并发线程数（按文件交错分配）</td></tr>
+<tr><td>停止后仍有文件写盘</td><td>停止只作用于<b>尚未开始</b>的文件</td><td>预期行为；已完成的不会回滚</td></tr>
+<tr><td>界面在 4K 屏上偏小或偏大</td><td>DPI 取整策略</td><td>当前用 <code>PassThrough</code> 按真实比例；若仍不适，可在快捷方式目标后加 <code>/DPIUNAWARE</code> 兼容性选项试验</td></tr>
+<tr><td>杀软删除了 exe</td><td>PyInstaller 通用特征误报</td><td>加白名单；交付时附源码与 spec</td></tr>
+</tbody></table></div>
+
+<h3>取诊断信息</h3>
+<div class="block"><div class="cap">cmd</div><pre>:: 1) 引擎与依赖是否正常（绕开界面），结果写在输出文件旁的 .selftest.log
+dist\MarkItDownGUI\MarkItDownGUI.exe --selftest "D:\t\sample.pdf" "D:\t\out.md"
+type "D:\t\out.md.selftest.log"
+
+:: 2) 界面与配置是否正常：状态栏已显示 markitdown/Python 版本与配置文件路径
+::    把该 json 文件连同 .selftest.log 一起发回来即可定位</pre></div>
+</section>
+
+<!-- ============================================================ 14 -->
+<section id="s14">
+<h2><span class="no">14</span>二次开发与环境重建</h2>
+
+<h3>14.1 从零重建构建环境</h3>
+<div class="block"><div class="cap">cmd</div><pre>cd /d D:\devsoft\markitdown
+
+:: 独立 venv，不复用 Anaconda base
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -U pip
+
+:: 国内网络用清华镜像，实测从 70–115 kB/s 提到 MB/s 级
+set IDX=-i https://pypi.tuna.tsinghua.edu.cn/simple
+
+.venv\Scripts\pip.exe install %IDX% "markitdown[all]"
+.venv\Scripts\pip.exe install %IDX% openai          :: markitdown[all] 不含它，LLM 描述必需
+.venv\Scripts\pip.exe install %IDX% PyQt5 pyinstaller
+.venv\Scripts\pip.exe install %IDX% python-docx     :: 仅生成 samples/ 用，运行不需要</pre></div>
+<p>关键版本（当前构建实测）：<code>markitdown==0.1.6</code>、<code>magika==0.6.3</code>、<code>onnxruntime==1.20.1</code>、<code>PyQt5==5.15.10</code>、<code>pyinstaller==6.22.3</code>、<code>openai==3.46.0</code>、<code>azure-ai-documentintelligence==1.0.2</code>、<code>azure-ai-contentunderstanding==1.2.0b3</code>。</p>
+
+<h3>14.2 日常改动闭环</h3>
+<div class="block"><div class="cap">cmd</div><pre>:: 改引擎逻辑
+.venv\Scripts\python.exe scripts\verify_engine.py          :: 16 项，约 40 秒
+
+:: 改界面逻辑
+.venv\Scripts\python.exe scripts\smoke_ui.py               :: 离屏断言
+
+:: 改完统一重打包 + 验产物
+.venv\Scripts\pyinstaller.exe --noconfirm build.spec       :: 约 106 秒
+.venv\Scripts\python.exe scripts\verify_exe.py             :: 9 项
+
+:: 需要看真实界面时（截图请对 HWND 用 PrintWindow，别拍屏幕区域）
+.venv\Scripts\pythonw.exe app_entry.py</pre></div>
+
+<h3>14.3 加一个新参数的固定顺序</h3>
+<ol>
+  <li><code>engine.py</code> 的 <code>ConvertOptions</code> 加字段并给安全默认值——<code>to_dict/from_dict</code> 自动带上，配置文件向后兼容。</li>
+  <li>若影响构造：<code>build_kwargs()</code> 里翻译成 markitdown 关键字；若影响 <code>convert()</code> 调用：<code>convert_one()</code>。</li>
+  <li><code>validate()</code> 补一条拦截规则，返回问题字符串而不是抛异常。</li>
+  <li><code>ui_main.py</code> 面板加控件，并在 <code>_collect_options()</code> 与 <code>_apply_options_to_widgets()</code> 两处成对读写；下拉项用 <code>_fill_combo()</code>（短标签 + <code>userData</code> + tooltip），避免撑宽面板。</li>
+  <li>若是新依赖：确认 markitdown 是否惰性导入，是则加进 <code>build.spec</code> 的 <code>optional_packages</code>。</li>
+  <li>补 <code>verify_engine.py</code> 检查项，跑完整闭环。</li>
+</ol>
+<div class="warn"><b>两条硬约束不要破：</b>① <code>engine.py</code> 里不许 import Qt；② 对 markitdown / openai / azure 的 import 必须留在函数内部惰性执行，否则界面冒烟测试会被依赖装不全拖死。</div>
+
+<h3>14.4 目录结构</h3>
+<div class="block blk-light"><pre>D:\devsoft\markitdown\
+├── app_entry.py                PyInstaller 入口脚本
+├── build.spec                  打包配置（onedir / windowed）
+├── assets/app.ico              应用图标
+├── src/markitdown_gui/
+│   ├── __main__.py             参数分派 + --selftest
+│   ├── engine.py               转换引擎（无 Qt）
+│   ├── settings.py             配置与密钥
+│   └── ui_main.py              主窗口与线程调度
+├── scripts/
+│   ├── make_samples.py         生成 samples/ 测试素材
+│   ├── make_icon.py            绘制 app.ico
+│   ├── verify_engine.py        引擎 16 项
+│   ├── smoke_ui.py             离屏界面冒烟
+│   └── verify_exe.py           产物 9 项
+├── samples/                    8 个测试文件（含无后缀与 GBK 文本）
+└── dist/MarkItDownGUI/         交付产物</pre></div>
+</section>
+
+<section id="s15" style="border:0;background:none;padding:6px 4px">
+<p style="color:var(--ink3);font-size:12.5px">文档对应代码状态：2026-11-06 构建，dist/MarkItDownGUI 产物已通过全部回归。参数表与校验规则逐条对照 <code>engine.py</code> / <code>ui_main.py</code> 实际实现生成，改代码后请同步更新第 7、8、9 节。</p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ---------- Mermaid：CDN 加载失败时自动退化为源码视图 ---------- */
+(function () {
+  var figures = Array.prototype.slice.call(document.querySelectorAll("figure.d"));
+
+  function showSrc(fig, on) {
+    fig.querySelector(".dsrc").classList.toggle("hidden", !on);
+    fig.querySelector(".dstage").classList.toggle("hidden", on);
+    fig.querySelector(".bsrc").textContent = on ? "渲染图" : "源码";
+  }
+  function setZoom(fig, z) {
+    z = Math.min(2.6, Math.max(0.4, z));
+    fig._z = z;
+    var stage = fig.querySelector(".dstage > .mm");
+    stage.style.zoom = z;
+    fig.querySelector(".zlvl").textContent = Math.round(z * 100) + "%";
+  }
+
+  figures.forEach(function (fig) {
+    var def = fig.querySelector(".mmdef").textContent.trim();
+    fig.querySelector(".dsrc").textContent = def;
+    fig._z = 1;
+    fig.querySelector(".bsrc").addEventListener("click", function () {
+      showSrc(fig, !fig.querySelector(".dsrc").classList.contains("hidden"));
+    });
+    fig.querySelector(".brz").addEventListener("click", function () { setZoom(fig, 1); });
+    Array.prototype.forEach.call(fig.querySelectorAll(".bz"), function (b) {
+      b.addEventListener("click", function () { setZoom(fig, fig._z + parseFloat(b.dataset.z)); });
+    });
+  });
+
+  var s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+  s.onload = function () {
+    mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose",
+      flowchart: { curve: "basis", htmlLabels: true, useMaxWidth: false },
+      sequence: { showSequenceNumbers: false, useMaxWidth: false } });
+    figures.forEach(function (fig, i) {
+      var box = fig.querySelector(".mm"), def = fig.querySelector(".mmdef").textContent.trim();
+      mermaid.render("mm" + i, def).then(function (r) { box.innerHTML = r.svg; })
+        .catch(function () { showSrc(fig, true); });
+    });
+  };
+  s.onerror = function () {
+    figures.forEach(function (fig) { showSrc(fig, true); });
+    var t = document.getElementById("btnAllSrc");
+    t.textContent = "图示需联网";
+    t.disabled = true;
+  };
+  document.head.appendChild(s);
+
+  var all = false;
+  document.getElementById("btnAllSrc").addEventListener("click", function () {
+    all = !all;
+    figures.forEach(function (fig) { showSrc(fig, all); });
+    this.textContent = all ? "全部显示渲染图" : "全部图示源码";
+  });
+})();
+
+/* ---------- 目录高亮 ---------- */
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll("nav.toc a"));
+  var map = {};
+  links.forEach(function (a) { map[a.getAttribute("href").slice(1)] = a; });
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      links.forEach(function (a) { a.classList.remove("on"); });
+      var a = map[e.target.id];
+      if (a) a.classList.add("on");
+    });
+  }, { rootMargin: "-78px 0px -65% 0px", threshold: 0 });
+  document.querySelectorAll("main section[id]").forEach(function (s) { io.observe(s); });
+})();
+
+/* ---------- 下载当前文档 ---------- */
+document.getElementById("btnDl").addEventListener("click", function () {
+  var html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+  var url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "MarkItDown-GUI-设计与部署文档.html";
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+});
+</script>
+</body>
+</html>

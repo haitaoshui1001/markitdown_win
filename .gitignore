@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 构建产物：285 MB，不入库，按 build.spec 重新生成
+build/
+dist/
+
+# 临时验证输出
+work/
+*.selftest.log
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
